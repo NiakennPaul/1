@@ -300,8 +300,8 @@ jobs:
     if ($json -and $json.status -eq "ok") {
         "SCREENSHOT_URL=$($json.data.downloadPage)" | Out-File -Append $env:GITHUB_ENV
     } else { Write-Warning "Upload failed or no URL returned" }
-  shell: pwsh
-
+  shell: pwsh 
+  
       - name: Dispatch next or stop
         if: always()
         env:
