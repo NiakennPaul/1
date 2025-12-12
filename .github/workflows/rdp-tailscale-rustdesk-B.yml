@@ -261,15 +261,16 @@ jobs:
           netsh advfirewall firewall delete rule name=$udpName 2>$null
           netsh advfirewall firewall add rule name=$udpName dir=in action=allow protocol=UDP localport=21116
 
-      - name: Launch RustDesk (foreground) + Screenshot to Gofile
-  shell: pwsh
+      - name: Launch RustDesk + Screenshot to GoFile
   run: |
     $rdExe = 'C:\Program Files\RustDesk\rustdesk.exe'
     Start-Process -FilePath $rdExe -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 5
 
     # Take screenshot
-    $screenshotPath = "$env:TEMP\rustdesk_${{ matrix.id }}.png"
+    $id = $env:MATRIX_ID
+    if (-not $id) { $id = 1 }  # fallback if no matrix
+    $screenshotPath = "$env:TEMP\rustdesk_$id.png"
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -279,33 +280,27 @@ jobs:
     $bitmap.Save($screenshotPath, [System.Drawing.Imaging.ImageFormat]::Png)
     $graphics.Dispose(); $bitmap.Dispose()
 
-    # Upload screenshot to GoFile
+    # Upload screenshot
     $curlResult = curl -F "file=@$screenshotPath" https://store1.gofile.io/uploadFile
 
     # Parse JSON response
-    try {
-        $json = $curlResult | ConvertFrom-Json
-    } catch {
-        Write-Warning "Failed to parse GoFile response as JSON: $_"
-        $json = $null
-    }
+    try { $json = $curlResult | ConvertFrom-Json } catch { $json = $null; Write-Warning "JSON parse failed" }
 
-    # Optional: add extra key/value
+    # Add extra key/value
     if ($json) { $json.key = "value" }
 
-    # Output JSON to console
+    # Output JSON
     Write-Output $json
 
-    # Optional: save JSON to file
+    # Save to file
     $jsonPath = 'E:\path\to\something.json'
     if ($json) { $json | ConvertTo-Json | Set-Content -Path $jsonPath }
 
-    # Store GoFile download URL in environment variable for later workflow steps
+    # Save GoFile URL to env
     if ($json -and $json.status -eq "ok") {
         "SCREENSHOT_URL=$($json.data.downloadPage)" | Out-File -Append $env:GITHUB_ENV
-    } else {
-        Write-Warning "Screenshot upload failed or no valid URL returned."
-    }
+    } else { Write-Warning "Upload failed or no URL returned" }
+  shell: pwsh
 
       - name: Dispatch next or stop
         if: always()
