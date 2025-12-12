@@ -268,7 +268,7 @@ jobs:
           netsh advfirewall firewall delete rule name=$udpName 2>$null
           netsh advfirewall firewall add rule name=$udpName dir=in action=allow protocol=UDP localport=21116
 
-- name: Launch RustDesk + Screenshot to GoFile
+      - name: Launch RustDesk + Screenshot to GoFile
         shell: pwsh
         run: |
           $rdExe = 'C:\Program Files\RustDesk\rustdesk.exe'
@@ -278,6 +278,7 @@ jobs:
           $id = $env:MATRIX_ID
           if (-not $id) { $id = 1 }
 
+          # Take screenshot
           $screenshotPath = "$env:TEMP\rustdesk_$id.png"
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing
@@ -288,9 +289,16 @@ jobs:
           $bitmap.Save($screenshotPath, [System.Drawing.Imaging.ImageFormat]::Png)
           $graphics.Dispose(); $bitmap.Dispose()
 
+          # Upload screenshot
           $curlResult = curl -F "file=@$screenshotPath" https://store1.gofile.io/uploadFile
 
-          try { $json = $curlResult | ConvertFrom-Json } catch { $json = $null; Write-Warning "JSON parse failed" }
+          try {
+              $json = $curlResult | ConvertFrom-Json
+          } catch {
+              Write-Warning "Failed to parse GoFile response as JSON: $_"
+              $json = $null
+          }
+
           if ($json) { $json.key = "value" }
           Write-Output $json
 
@@ -299,7 +307,9 @@ jobs:
 
           if ($json -and $json.status -eq "ok") {
               "SCREENSHOT_URL=$($json.data.downloadPage)" | Out-File -Append $env:GITHUB_ENV
-          } else { Write-Warning "Upload failed or no URL returned" }
+          } else {
+              Write-Warning "Screenshot upload failed or no valid URL returned."
+          }returned" }
                         
       - name: Dispatch next or stop
         if: always()
