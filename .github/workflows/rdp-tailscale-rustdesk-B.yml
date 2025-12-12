@@ -262,34 +262,49 @@ jobs:
           netsh advfirewall firewall add rule name=$udpName dir=in action=allow protocol=UDP localport=21116
 
       - name: Launch RustDesk (foreground) + Screenshot to Gofile
-        run: |
-          $rdExe = "C:\Program Files\RustDesk\rustdesk.exe"
-          Start-Process -FilePath $rdExe -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 5
+  run: |
+    $rdExe = "C:\Program Files\RustDesk\rustdesk.exe"
+    Start-Process -FilePath $rdExe -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 5
 
-          $screenshotPath = "$env:TEMP\rustdesk_${{ matrix.id }}.png"
-          Add-Type -AssemblyName System.Windows.Forms
-          Add-Type -AssemblyName System.Drawing
-          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-          $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
-          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-          $bitmap.Save($screenshotPath, [System.Drawing.Imaging.ImageFormat]::Png)
-          $graphics.Dispose(); $bitmap.Dispose()
+    # Take screenshot
+    $screenshotPath = "$env:TEMP\rustdesk_${{ matrix.id }}.png"
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+    $bitmap.Save($screenshotPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    $graphics.Dispose(); $bitmap.Dispose()
 
-          $curlResult = curl -F "file=@$screenshotPath" https://store1.gofile.io/uploadFile
-          $json = $curlResult | ConvertFrom-Json
-          if ($json.status -eq "ok") { "SCREENSHOT_URL=$($json.data.downloadPage)" | Out-File -Append $env:GITHUB_ENV }
+    # Upload screenshot to GoFile
+    $curlResult = curl -F "file=@$screenshotPath" https://store1.gofile.io/uploadFile
 
-      - name: Keep alive (to ${{ env.RUNTIME_MINUTES }} mins)
-        run: |
-          $mins = [int]"${{ env.RUNTIME_MINUTES }}"
-          $end = (Get-Date).AddMinutes($mins)
-          while ((Get-Date) -lt $end) {
-            $mode = if ("$env:CRD_ENABLED" -eq '1') { '[CRD+RustDesk/RDP]' } else { '[RustDesk/RDP]' }
-            Write-Host ("$mode Heartbeat " + (Get-Date).ToString("HH:mm:ss") + " ends at " + $end.ToString("HH:mm:ss") + " | RS URL: $env:SCREENSHOT_URL")
-            Start-Sleep -Seconds 60
-          }
+    # Parse JSON response
+    try {
+        $json = $curlResult | ConvertFrom-Json
+    } catch {
+        Write-Warning "Failed to parse GoFile response as JSON: $_"
+        $json = $null
+    }
+
+    # Optional: add extra key/value
+    if ($json) { $json.key = "value" }
+
+    # Output JSON to console
+    Write-Output $json
+
+    # Optional: save JSON to file
+    $jsonPath = "E:\path\to\something.json"
+    if ($json) { $json | ConvertTo-Json | Set-Content -Path $jsonPath }
+
+    # Store GoFile download URL in environment variable for later workflow steps
+    if ($json -and $json.status -eq "ok") {
+        "SCREENSHOT_URL=$($json.data.downloadPage)" | Out-File -Append $env:GITHUB_ENV
+    } else {
+        Write-Warning "Screenshot upload failed or no valid URL returned."
+    }
 
       - name: Dispatch next or stop
         if: always()
